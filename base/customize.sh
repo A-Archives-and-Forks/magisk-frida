@@ -21,9 +21,8 @@
 ##########################################################################################
 
 # Set to true if you do *NOT* want Magisk to mount
-# any files for you. Most modules would NOT want
-# to set this flag to true
-SKIPMOUNT=false
+# any files for you. This module runs Frida from its own bin directory.
+SKIPMOUNT=true
 
 # Set to true if you need to load system.prop
 PROPFILE=false
@@ -129,7 +128,7 @@ set -x
 PATH=$PATH:/data/adb/ap/bin:/data/adb/magisk:/data/adb/ksu/bin
 
 # keep Magisk's forced module installer backend involvement minimal (must end without ";")
-# SKIPUNZIP=1
+SKIPUNZIP=1
 
 # Set what you want to display when installing your module
 print_modname() {
@@ -171,13 +170,18 @@ on_install() {
 fi
 
   ui_print "- Unzipping module files..."
-  F_TARGETDIR="$MODPATH/system/bin"
-  mkdir -p "$F_TARGETDIR"
-  chcon -R u:object_r:system_file:s0 "$F_TARGETDIR"
-  chmod -R 755 "$F_TARGETDIR"
+  busybox unzip -qq -o "$ZIPFILE" -x "META-INF/*" "files/*" -d "$MODPATH"
 
-  busybox unzip -qq -o "$ZIPFILE" "files/frida-server-$F_ARCH" -j -d "$F_TARGETDIR"
-  mv "$F_TARGETDIR/frida-server-$F_ARCH" "$F_TARGETDIR/frida-server"
+  # Clean up leftovers from previous installs that used the mount-based layout.
+  rm -rf "$MODPATH/files" "$MODPATH/system/bin"
+  rmdir "$MODPATH/system" 2>/dev/null
+
+  F_BINDIR="$MODPATH/bin"
+  mkdir -p "$F_BINDIR"
+
+  ui_print "- Installing Frida to module bin..."
+  busybox unzip -qq -o "$ZIPFILE" "files/frida-server-$F_ARCH" -j -d "$F_BINDIR"
+  mv -f "$F_BINDIR/frida-server-$F_ARCH" "$F_BINDIR/frida-server"
 }
 
 # Only some special files require specific permissions
@@ -189,7 +193,7 @@ set_permissions() {
   set_perm_recursive $MODPATH 0 0 0755 0644
 
   # Custom permissions
-  set_perm $MODPATH/system/bin/frida-server 0 2000 0755 u:object_r:system_file:s0
+  set_perm $MODPATH/bin/frida-server 0 2000 0755 u:object_r:system_file:s0
 }
 
 print_modname
